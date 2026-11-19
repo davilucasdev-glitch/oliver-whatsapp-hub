@@ -46,12 +46,13 @@ function PasswordInput({ id, name, required, value, onChange }: { id: string; na
   );
 }
 
-type Alerts = { phone: string; alertNewOrders: boolean; alertStuck: boolean; alertDaily: boolean };
-const NO_ALERTS: Alerts = { phone: '', alertNewOrders: false, alertStuck: false, alertDaily: false };
+type Alerts = { phone: string; alertNewOrders: boolean; alertStuck: boolean; alertDaily: boolean; alertSystem: boolean };
+const NO_ALERTS: Alerts = { phone: '', alertNewOrders: false, alertStuck: false, alertDaily: false, alertSystem: true };
 const ALERT_LABEL: [keyof Omit<Alerts, 'phone'>, string, string][] = [
   ['alertNewOrders', 'Pedido novo para separar', 'Quando um pedido entra em Separando (Duda, Gabi)'],
   ['alertStuck', 'Pedidos parados', 'Uma vez por dia: há mais de 1 dia em Separando ou Emitir etiqueta'],
   ['alertDaily', 'Resumo do dia', 'No fim do dia: quantos pedidos saíram e quantos ficaram'],
+  ['alertSystem', 'Alertas do sistema', 'Só para administradores: Bling desconectado, leitura de pedidos parada, número com problema'],
 ];
 
 /** WhatsApp da pessoa e quais avisos internos ela recebe. */
@@ -148,7 +149,7 @@ function EditUserDialog({ user, onClose, onSaved }: { user: TeamUser | null; onC
     setPassword('');
     setActive(user.active);
     setReset2fa(false);
-    setAlerts({ phone: user.phone ?? '', alertNewOrders: user.alertNewOrders, alertStuck: user.alertStuck, alertDaily: user.alertDaily });
+    setAlerts({ phone: user.phone ?? '', alertNewOrders: user.alertNewOrders, alertStuck: user.alertStuck, alertDaily: user.alertDaily, alertSystem: user.alertSystem });
   }
 
   async function submit(e: React.FormEvent<HTMLFormElement>) {

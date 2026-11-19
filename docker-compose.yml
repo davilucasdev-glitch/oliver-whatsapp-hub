@@ -45,8 +45,9 @@ services:
     env_file: .env
     environment:
       QUEUE_DRIVER: bullmq
+    # só neste servidor: de fora, tudo passa pelo HTTPS (caddy)
     ports:
-      - "3001:3001"
+      - "127.0.0.1:3001:3001"
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
@@ -75,7 +76,7 @@ services:
         API_INTERNAL_URL: http://api:3001
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     depends_on:
       api: { condition: service_healthy }
 
@@ -98,6 +99,28 @@ services:
     depends_on:
       api: { condition: service_healthy }
       web: { condition: service_healthy }
+
+  # Cópia do banco todo dia (e a cada subida), guardada 14 dias em ./backups (fora do Docker).
+  # Restaurar: deploy/restaurar-backup.sh backups/oliver-hub-AAAA-MM-DD_HHMM.sql.gz
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      BACKUP_DAYS: ${BACKUP_DAYS:-14}
+    volumes:
+      - ./backups:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          f=/backups/oliver-hub-$$(date +%Y-%m-%d_%H%M).sql.gz
+          if pg_dump -h postgres -U oliver -d oliver_hub --no-owner | gzip > "$$f.tmp"; then mv "$$f.tmp" "$$f"; echo "backup ok: $$f"; else rm -f "$$f.tmp"; echo "BACKUP FALHOU"; fi
+          find /backups -name 'oliver-hub-*.sql.gz' -mtime +$$BACKUP_DAYS -delete
+          sleep 86400
+        done
+    depends_on:
+      postgres: { condition: service_healthy }
 
 volumes:
   pgdata:

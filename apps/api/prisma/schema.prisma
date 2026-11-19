@@ -25,6 +25,7 @@ model User {
   alertNewOrders Boolean          @default(false) // pedido novo em Separando
   alertStuck     Boolean          @default(false) // pedidos parados há mais de 1 dia
   alertDaily     Boolean          @default(false) // resumo do fim do dia
+  alertSystem    Boolean          @default(true) // alertas graves do sistema (só administradores)
   passwordHash   String
   totpSecret     String? // criptografado (AES-GCM) — 2FA ativo
   totpPendingEnc String? // segredo gerado, aguardando a confirmação do primeiro código
@@ -83,6 +84,7 @@ model Alert {
   phoneNumber   PhoneNumber? @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
   meta          Json?
   readAt        DateTime?
+  notifiedAt    DateTime? // já avisado no WhatsApp dos administradores
   createdAt     DateTime     @default(now())
 
   @@index([readAt, createdAt])
@@ -641,6 +643,7 @@ enum AlertKind {
   NOVOS_SEPARANDO
   PARADOS
   RESUMO_DIA
+  SISTEMA // algo quebrou (Bling desconectado, leitura parada, número com problema…)
 }
 
 enum RelationKind {

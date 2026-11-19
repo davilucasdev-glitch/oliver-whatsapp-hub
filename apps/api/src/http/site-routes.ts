@@ -49,7 +49,8 @@ export async function siteRoutes(app: FastifyInstance, deps: Deps): Promise<void
 
       site.get('/templates', async () => ({ templates: await siteTemplates(deps) }));
 
-      site.post('/messages', { config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
+      // anexo em base64 (PDF até 16 MB) cabe no corpo
+      site.post('/messages', { bodyLimit: 24 * 1024 * 1024, config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
         const body = parse(
           z.object({
             phone,

@@ -77,6 +77,7 @@ export interface TeamUser {
   alertNewOrders: boolean;
   alertStuck: boolean;
   alertDaily: boolean;
+  alertSystem: boolean;
 }
 
 export interface Assignee {

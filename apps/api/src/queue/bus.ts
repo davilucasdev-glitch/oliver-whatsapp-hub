@@ -14,6 +14,7 @@ export const QUEUES = {
   charges: 'charges', // cópia das contas a receber do Bling (cobrança)
   relation: 'relation', // aniversário e última compra (relacionamento)
   site: 'site', // avisos do hub para o site (mensagem recebida, status, opt-out)
+  health: 'health', // saúde do sistema (rotinas paradas → alerta para os administradores)
 } as const;
 
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];

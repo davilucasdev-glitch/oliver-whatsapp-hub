@@ -29,7 +29,7 @@ const phoneField = z
     if (!e164) ctx.addIssue({ code: 'custom', message: 'WhatsApp inválido: use DDD + número' });
     return e164 ?? null;
   });
-const alertFields = { phone: phoneField, alertNewOrders: z.boolean().optional(), alertStuck: z.boolean().optional(), alertDaily: z.boolean().optional() };
+const alertFields = { phone: phoneField, alertNewOrders: z.boolean().optional(), alertStuck: z.boolean().optional(), alertDaily: z.boolean().optional(), alertSystem: z.boolean().optional() };
 
 function checkPassword(p: string) {
   const problem = passwordProblems(p);
@@ -119,6 +119,7 @@ export async function teamRoutes(app: FastifyInstance, deps: Deps): Promise<void
         alertNewOrders: u.alertNewOrders,
         alertStuck: u.alertStuck,
         alertDaily: u.alertDaily,
+        alertSystem: u.alertSystem,
         me: u.id === req.user!.id,
       })),
     };
@@ -148,6 +149,7 @@ export async function teamRoutes(app: FastifyInstance, deps: Deps): Promise<void
         alertNewOrders: body.alertNewOrders ?? false,
         alertStuck: body.alertStuck ?? false,
         alertDaily: body.alertDaily ?? false,
+        alertSystem: body.alertSystem ?? true,
       },
     });
     log.info({ by: req.user!.email, email: user.email, role: user.role }, 'Acesso criado');
@@ -196,6 +198,7 @@ export async function teamRoutes(app: FastifyInstance, deps: Deps): Promise<void
         alertNewOrders: body.alertNewOrders,
         alertStuck: body.alertStuck,
         alertDaily: body.alertDaily,
+        alertSystem: body.alertSystem,
         ...(body.password ? { passwordHash: await hashPassword(body.password) } : {}),
         ...(body.resetTwoFactor
           ? { totpSecret: null, totpPendingEnc: null, totpEnabledAt: null, totpLastStep: null, recoveryCodes: [] }
