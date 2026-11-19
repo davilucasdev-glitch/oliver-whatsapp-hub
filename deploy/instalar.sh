@@ -21,7 +21,7 @@ command -v apt-get >/dev/null || erro "este instalador é para Ubuntu/Debian"
 
 cor "1/6 Pacotes e Docker"
 apt-get update -qq
-apt-get install -y -qq ca-certificates curl git openssl ufw >/dev/null
+apt-get install -y -qq ca-certificates curl git openssl >/dev/null
 if ! command -v docker >/dev/null; then
   curl -fsSL https://get.docker.com | sh
 fi
@@ -29,11 +29,24 @@ docker compose version >/dev/null || erro "Docker Compose não ficou disponível
 systemctl enable --now docker >/dev/null
 
 cor "2/6 Firewall (SSH, 80 e 443)"
-ufw allow OpenSSH >/dev/null
-ufw allow 80/tcp >/dev/null
-ufw allow 443/tcp >/dev/null
-ufw --force enable >/dev/null
-ufw status | sed -n '1,8p'
+if [ -f /etc/iptables/rules.v4 ] && grep -q 'REJECT' /etc/iptables/rules.v4; then
+  # Ubuntu da Oracle Cloud: já vem com iptables fechado e o ufw não deve ser usado (corta o SSH).
+  # Abre 80/443 antes da regra de bloqueio e grava. Na Oracle também é preciso liberar 80 e 443
+  # na "Security List" da rede, pelo console (ENTRAR-NO-AR.md explica).
+  for p in 80 443; do
+    iptables -C INPUT -p tcp --dport "$p" -m state --state NEW -j ACCEPT 2>/dev/null ||
+      iptables -I INPUT 5 -p tcp --dport "$p" -m state --state NEW -j ACCEPT
+  done
+  command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null 2>&1 || iptables-save >/etc/iptables/rules.v4
+  echo "Oracle Cloud detectada: portas 80 e 443 abertas no iptables."
+else
+  apt-get install -y -qq ufw >/dev/null
+  ufw allow OpenSSH >/dev/null
+  ufw allow 80/tcp >/dev/null
+  ufw allow 443/tcp >/dev/null
+  ufw --force enable >/dev/null
+  ufw status | sed -n '1,8p'
+fi
 
 cor "3/6 Acesso de leitura ao GitHub (deploy key)"
 mkdir -p /root/.ssh && chmod 700 /root/.ssh
