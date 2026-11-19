@@ -242,7 +242,7 @@ async function handleStatus(deps: Deps, ev: Extract<ExtractedEvent, { kind: 'sta
   const at = new Date(Number(s.timestamp) * 1000 || Date.now());
 
   const data: Prisma.MessageUpdateInput = {};
-  if (next === 'FAILED' || STATUS_RANK[next] > STATUS_RANK[msg.status]) data.status = next;
+  const advances = next === 'FAILED' || STATUS_RANK[next] > STATUS_RANK[msg.status];
   if (next === 'SENT') data.sentAt = at;
   if (next === 'DELIVERED') data.deliveredAt = at;
   if (next === 'READ') data.readAt = at;
@@ -253,6 +253,13 @@ async function handleStatus(deps: Deps, ev: Extract<ExtractedEvent, { kind: 'sta
     data.errorMessage = (e?.error_data?.details ?? e?.message ?? e?.title ?? null)?.slice(0, 500) ?? null;
   }
   await deps.db.message.update({ where: { id: msg.id }, data });
+  // O status só avança, e a condição fica no próprio UPDATE: a Meta manda sent/delivered/read quase
+  // juntos e a fila processa em paralelo — um "delivered" atrasado não pode sobrescrever um "read".
+  if (advances) {
+    const lower = (Object.keys(STATUS_RANK) as MessageStatus[]).filter((st) => STATUS_RANK[st] < STATUS_RANK[next]);
+    await deps.db.message.updateMany({ where: { id: msg.id, ...(next === 'FAILED' ? {} : { status: { in: lower } }) }, data: { status: next } });
+    data.status = next; // para o aviso ao site abaixo
+  }
 
   if (msg.campaignId) await updateRecipientStatus(deps, s.id, next, at, s.errors?.[0]);
 

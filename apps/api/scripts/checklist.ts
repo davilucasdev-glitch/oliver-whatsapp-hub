@@ -61,6 +61,30 @@ async function dbChecks(env: Env, db: PrismaClient) {
   check(Boolean(hours), 'Bot', 'Horário de atendimento humano definido', 'Horário de atendimento humano não definido (Bot de IA → Configurações)', 'atenção');
   check(Boolean(auth), 'Bling', `Bling conectado (${products} produtos ativos)`, 'Bling não conectado: Produtos → Conectar ao Bling', 'atenção');
   check(Boolean(env.ANTHROPIC_API_KEY || apiKey), 'Bot', 'Chave da Anthropic configurada', 'Sem chave da Anthropic (ANTHROPIC_API_KEY ou Bot de IA → Configurações): o bot só transfere para a equipe');
+  // ── Partes novas: avisos de pedido, cobrança, equipe, site, templates ──
+  const approved = new Set((await db.template.findMany({ where: { status: 'APPROVED' }, select: { name: true } })).map((t) => t.name));
+  const setting = async <T,>(key: string) => ((await db.setting.findUnique({ where: { key } }))?.value ?? null) as T | null;
+  const orders = await setting<{ enabled?: boolean; testPhone?: string | null; kinds?: Record<string, { enabled: boolean; template: string }> }>('orders.notices');
+  check(Boolean(orders?.enabled), 'Avisos de pedido', 'Ligados', 'Desligados (Avisos de pedido → Mandar avisos)', 'atenção');
+  if (orders?.enabled && orders.testPhone) add('atenção', 'Avisos de pedido', `MODO DE TESTE ligado: todo aviso vai para ${orders.testPhone} e não para as clientes`);
+  const orderTpls = Object.values(orders?.kinds ?? {}).filter((k) => k.enabled).map((k) => k.template);
+  const missingOrders = orderTpls.filter((t) => !approved.has(t));
+  if (orders?.enabled) check(missingOrders.length === 0, 'Avisos de pedido', 'Templates aprovados', `Templates sem aprovação: ${missingOrders.join(', ')}`);
+
+  const charges = await setting<{ pixKey?: string; ownerUserId?: string | null }>('charges.config');
+  check(Boolean(charges?.pixKey), 'Cobrança', 'Chave Pix definida', 'Sem chave Pix (Cobrança → Configurações): lembrete e vence hoje ficam bloqueados', 'atenção');
+  check(Boolean(charges?.ownerUserId), 'Cobrança', 'Responsável pelas conversas de cobrança definida', 'Ninguém definido para as conversas de cobrança (pelo documento, a Ellen)', 'atenção');
+
+  const team = await db.user.findMany({ where: { active: true }, select: { role: true, phone: true, alertSystem: true } });
+  check(team.length > 1, 'Equipe', `${team.length} acesso(s) ativo(s)`, 'Só um acesso: cadastre a Ellen, a Duda e a Gabi em Equipe', 'atenção');
+  check(team.some((u) => u.role === 'ADMIN' && u.phone && u.alertSystem), 'Equipe', 'Alertas do sistema vão para o WhatsApp de um administrador', 'Nenhum administrador com WhatsApp em Equipe: se algo parar, ninguém é avisado no celular', 'atenção');
+  check(approved.has('equipe_alerta_sistema'), 'Equipe', 'Template de alerta do sistema aprovado', 'Template equipe_alerta_sistema não aprovado (Equipe → Criar templates dos avisos)', 'atenção');
+
+  const site = await setting<{ tokenHash?: string | null; webhookUrl?: string; lastUsedAt?: string | null }>('site.integration');
+  check(Boolean(site?.tokenHash), 'Site', site?.lastUsedAt ? 'Chave do site gerada e já usada' : 'Chave do site gerada', 'Chave do site não gerada (Integração com o site)', 'atenção');
+  check(Boolean(site?.webhookUrl), 'Site', `Avisos para ${site?.webhookUrl}`, 'URL dos avisos para o site não configurada', 'atenção');
+  check(Boolean(env.META_APP_ID), 'Meta', 'META_APP_ID definido', 'META_APP_ID vazio: templates com PDF/imagem (fornecedores, campanha do painel) não podem ser criados', 'atenção');
+
   const knowledge = await getKnowledge(db, env);
   // nome curto de cada item ("Frete e prazo de entrega: [DEFINIR]" → "Frete e prazo de entrega"); ignora a linha que só explica a regra
   const pending = pendingPlaceholders(knowledge.content)

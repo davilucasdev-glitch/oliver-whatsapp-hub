@@ -18,10 +18,10 @@ import { getSetting, setSetting } from '../settings.js';
 
 const log = childLogger('equipe:avisos');
 
-export const ALERT_KINDS = ['NOVOS_SEPARANDO', 'PARADOS', 'RESUMO_DIA'] as const satisfies readonly AlertKind[];
+export const ALERT_KINDS = ['NOVOS_SEPARANDO', 'PARADOS', 'RESUMO_DIA', 'SISTEMA'] as const satisfies readonly AlertKind[];
 export type AlertKindKey = (typeof ALERT_KINDS)[number];
 
-export const ALERT_INFO: Record<AlertKindKey, { label: string; when: string; userFlag: 'alertNewOrders' | 'alertStuck' | 'alertDaily'; suggested: { name: string; body: string; examples: string[] } }> = {
+export const ALERT_INFO: Record<AlertKindKey, { label: string; when: string; userFlag: 'alertNewOrders' | 'alertStuck' | 'alertDaily' | 'alertSystem'; suggested: { name: string; body: string; examples: string[] } }> = {
   NOVOS_SEPARANDO: {
     label: 'Pedido novo para separar',
     when: 'Quando um pedido entra em Separando',
@@ -46,6 +46,16 @@ export const ALERT_INFO: Record<AlertKindKey, { label: string; when: string; use
       name: 'equipe_resumo_dia',
       body: 'Resumo de hoje na Oliver Cosméticos: {{1}} pedido(s) saíram e {{2}} ficaram em andamento ({{3}}). Até amanhã!',
       examples: ['12', '3', 'nº 8814, nº 8815, nº 8820'],
+    },
+  },
+  SISTEMA: {
+    label: 'Alerta do sistema (administradores)',
+    when: 'Quando algo para: Bling desconectado, leitura de pedidos parada, número com problema na Meta',
+    userFlag: 'alertSystem',
+    suggested: {
+      name: 'equipe_alerta_sistema',
+      body: 'Atenção no Oliver Hub: {{1}}. Abra o painel para ver os detalhes (aviso automático).',
+      examples: ['O Bling está desconectado: avisos de pedido pararam'],
     },
   },
 };

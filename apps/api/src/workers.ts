@@ -4,6 +4,7 @@ import { registerOrdersWorker } from './orders/jobs.js';
 import { registerChargesWorker } from './charges/jobs.js';
 import { registerRelationWorker } from './relation/jobs.js';
 import { registerSiteWorker } from './site/webhooks.js';
+import { registerHealthWorker } from './team/health.js';
 import { aiReplyEngine, registerBotWorker } from './bot/ai-engine.js';
 import { echoReplyEngine, silentReplyEngine, type ReplyEngine } from './bot/reply-engine.js';
 import type { Deps } from './deps.js';
@@ -41,5 +42,6 @@ export function registerWorkers(deps: Deps, opts: WorkerOptions = {}): void {
   registerChargesWorker(deps);
   registerRelationWorker(deps);
   registerSiteWorker(deps);
+  registerHealthWorker(deps);
   log.info({ driver: deps.bus.driver, engine: engine.name }, 'Workers registrados');
 }

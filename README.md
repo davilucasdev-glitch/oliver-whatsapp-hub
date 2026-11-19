@@ -83,6 +83,8 @@ apps/api/
 
 ## Passo a passo para colocar no ar
 
+> **Roteiro completo e atualizado: [ENTRAR-NO-AR.md](ENTRAR-NO-AR.md).** Instalação automática num servidor Ubuntu: `deploy/instalar.sh`; atualizar: `deploy/atualizar.sh`; conferir o que falta: `deploy/conferir.sh`; voltar um backup: `deploy/restaurar-backup.sh`. Backup diário do banco, alertas graves no WhatsApp dos administradores e limpeza automática dos registros técnicos já vêm ligados. Os passos abaixo são o detalhe manual.
+
 Você vai precisar de: um servidor com Docker (ex.: VPS Linux com 2 GB de RAM), um domínio apontando para ele, acesso de administrador ao Gerenciador de Negócios da Meta, acesso ao Bling e uma conta na Anthropic.
 
 1. **Meta**: crie o app, pegue os IDs, o App Secret e o token permanente ([Meta: app, token e webhook](#meta-app-token-e-webhook), passos 1 a 5).

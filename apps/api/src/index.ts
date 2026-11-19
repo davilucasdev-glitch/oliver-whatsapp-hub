@@ -6,6 +6,7 @@ import { startCampaignScheduler } from './campaigns/jobs.js';
 import { startOrdersScheduler } from './orders/jobs.js';
 import { startChargesScheduler } from './charges/jobs.js';
 import { startRelationScheduler } from './relation/jobs.js';
+import { startHealthScheduler } from './team/health.js';
 import { registerWorkers } from './workers.js';
 
 async function main(): Promise<void> {
@@ -20,6 +21,7 @@ async function main(): Promise<void> {
     startOrdersScheduler(deps);
     startChargesScheduler(deps);
     startRelationScheduler(deps);
+    startHealthScheduler(deps);
   }
 
   await app.listen({ port: deps.env.PORT, host: deps.env.HOST });
