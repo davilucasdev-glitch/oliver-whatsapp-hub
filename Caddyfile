@@ -1,0 +1,25 @@
+# HTTPS automático (Let's Encrypt) na frente do painel e do webhook.
+# Use com:  docker compose --profile https up -d --build   (defina DOMAIN e ACME_EMAIL no .env)
+# O DNS do domínio precisa apontar para este servidor e as portas 80/443 precisam estar abertas.
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode gzip
+	# a Meta chama o webhook direto na API
+	handle /webhook* {
+		reverse_proxy api:3001
+	}
+	handle /health {
+		reverse_proxy api:3001
+	}
+	# todo o resto (inclusive /api/*) vai para o painel, que repassa para a API pela rede interna
+	handle {
+		reverse_proxy web:3000
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

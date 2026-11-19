@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.next/
+coverage/
+.env
+.env.*
+!.env.example
+.pglite/
+*.log
+.logs/
+tools/
+
+# kit PHP: configuração com a chave e dados do webhook
+integracao-php/oliver-hub-config.php
+integracao-php/hub-dados/
+*.tsbuildinfo
+next-env.d.ts

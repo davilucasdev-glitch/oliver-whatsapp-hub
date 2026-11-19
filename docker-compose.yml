@@ -1,0 +1,106 @@
+# Oliver WhatsApp Hub — sobe tudo com:  docker compose up -d --build
+# Antes: copie .env.example para .env e preencha.
+name: oliver-hub
+
+services:
+  postgres:
+    image: postgres:16-alpine # já inclui a extensão pg_trgm (contrib)
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oliver
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: oliver_hub
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oliver -d oliver_hub"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # Aplica as migrations versionadas e encerra.
+  migrate:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    env_file: .env
+    command: ["node", "/app/node_modules/prisma/build/index.js", "migrate", "deploy"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      QUEUE_DRIVER: bullmq
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  worker:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      QUEUE_DRIVER: bullmq
+    command: ["node", "dist/src/worker.js"]
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  # Painel. Repassa /api/* para o serviço "api" pela rede interna.
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:3001
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      api: { condition: service_healthy }
+
+  # HTTPS (opcional): docker compose --profile https up -d --build
+  # Com ele, painel e webhook ficam em https://DOMAIN (PUBLIC_BASE_URL e PANEL_URL = https://DOMAIN, COOKIE_SECURE=true).
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: ["https"]
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:-}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      api: { condition: service_healthy }
+      web: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:

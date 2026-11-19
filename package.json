@@ -1,0 +1,26 @@
+{
+  "name": "oliver-whatsapp-hub",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Oliver WhatsApp Hub — gestão de números, campanhas e bot de IA (uso interno Oliver Cosmetics)",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:db": "npm run dev:db -w apps/api",
+    "dev:api": "npm run dev -w apps/api",
+    "db:migrate": "npm run db:migrate -w apps/api",
+    "db:seed": "npm run db:seed -w apps/api",
+    "sync:bling": "npm run sync:bling -w apps/api --",
+    "mock:bling": "npm run mock:bling -w apps/api",
+    "mock:claude": "npm run mock:claude -w apps/api",
+    "checklist": "npm run checklist -w apps/api"
+  }
+}

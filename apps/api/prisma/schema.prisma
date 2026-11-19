@@ -1,0 +1,764 @@
+// Oliver WhatsApp Hub — modelo de dados
+// Migrations versionadas em prisma/migrations (npm run db:migrate).
+
+generator client {
+  provider        = "prisma-client-js"
+  binaryTargets   = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+  previewFeatures = []
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────── Painel / usuário ─────────────────────────
+
+model User {
+  id             String           @id @default(cuid())
+  email          String           @unique
+  name           String           @default("")
+  role           UserRole         @default(ATENDENTE)
+  active         Boolean          @default(true) // desativado não entra (as sessões são apagadas)
+  lastLoginAt    DateTime?
+  phone          String? // WhatsApp da pessoa (E.164), para os avisos internos
+  alertNewOrders Boolean          @default(false) // pedido novo em Separando
+  alertStuck     Boolean          @default(false) // pedidos parados há mais de 1 dia
+  alertDaily     Boolean          @default(false) // resumo do fim do dia
+  passwordHash   String
+  totpSecret     String? // criptografado (AES-GCM) — 2FA ativo
+  totpPendingEnc String? // segredo gerado, aguardando a confirmação do primeiro código
+  totpEnabledAt  DateTime?
+  totpLastStep   Int? // último passo de 30 s aceito (impede reusar o mesmo código)
+  recoveryCodes  Json? // hashes SHA-256 dos códigos de recuperação ainda não usados
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  sessions       Session[]
+  challenges     LoginChallenge[]
+  conversations  Conversation[]
+  messagesSent   Message[]
+}
+
+enum UserRole {
+  ADMIN // gerencia a equipe
+  ATENDENTE
+}
+
+/// Login em duas etapas: senha certa gera um desafio curto; o código do app conclui.
+model LoginChallenge {
+  id        String   @id // hash SHA-256 do token do desafio
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  attempts  Int      @default(0)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id // hash SHA-256 do token de sessão (o token em si nunca é salvo)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Alert {
+  id            String       @id @default(cuid())
+  level         AlertLevel   @default(WARNING)
+  type          String // ex.: QUALITY_LOW, HANDOFF, CAMPAIGN_PAUSED
+  message       String
+  phoneNumberId String?
+  phoneNumber   PhoneNumber? @relation(fields: [phoneNumberId], references: [id], onDelete: SetNull)
+  meta          Json?
+  readAt        DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([readAt, createdAt])
+}
+
+enum AlertLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// ───────────────────────── Números (WABA) ─────────────────────────
+
+model PhoneNumber {
+  id                     String         @id @default(cuid())
+  phoneNumberId          String         @unique // phone_number_id da Meta
+  wabaId                 String
+  displayName            String
+  displayPhone           String? // ex.: +55 11 99999-9999
+  accessTokenEnc         String? // token criptografado; se nulo usa META_ACCESS_TOKEN do .env
+  role                   NumberRole     @default(BOTH)
+  status                 String         @default("UNKNOWN") // CONNECTED, PENDING, FLAGGED, ...
+  qualityRating          QualityRating  @default(UNKNOWN)
+  messagingTier          String? // ex.: TIER_1K, TIER_10K, TIER_UNLIMITED
+  dailyConversationLimit Int            @default(250)
+  baseSendRatePerMinute  Int            @default(20) // ritmo configurado (conservador)
+  sendRatePerMinute      Int            @default(20) // ritmo efetivo (reduzido se a qualidade cair)
+  botEnabled             Boolean        @default(true)
+  campaignsPaused        Boolean        @default(false)
+  isActive               Boolean        @default(true)
+  lastSyncedAt           DateTime?
+  campaignNextSendAt     DateTime? // próximo envio de campanha liberado (ritmo por número)
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+  conversations          Conversation[]
+  campaigns              Campaign[]
+  alerts                 Alert[]
+  messages               Message[]
+}
+
+enum NumberRole {
+  ATTENDANCE
+  CAMPAIGNS
+  BOTH
+}
+
+enum QualityRating {
+  HIGH // GREEN
+  MEDIUM // YELLOW
+  LOW // RED
+  UNKNOWN
+}
+
+// ───────────────────────── Contatos ─────────────────────────
+
+model Contact {
+  id                 String              @id @default(cuid())
+  phone              String              @unique // E.164 com "+", ex.: +5511999999999
+  waId               String?             @unique // wa_id (sem "+") recebido da Meta
+  name               String?
+  email              String?
+  document           String? // CPF/CNPJ (para consulta de pedido)
+  blingContactId     String?             @unique
+  optIn              Boolean             @default(false)
+  optInAt            DateTime?
+  optInSource        String? // ex.: "csv:import-2026-11", "whatsapp:iniciou-conversa", "site"
+  optOut             Boolean             @default(false)
+  optOutAt           DateTime?
+  lastInboundAt      DateTime?
+  lastCampaignAt     DateTime?
+  birthDate          String? // AAAA-MM-DD, do cadastro do Bling
+  lastOrderDate      String? // AAAA-MM-DD, última compra no Bling
+  blingCheckedAt     DateTime? // última leitura de aniversário/última compra
+  isSupplier         Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  tags               ContactTag[]
+  conversations      Conversation[]
+  consentLogs        ConsentLog[]
+  campaignRecipients CampaignRecipient[]
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  color     String?
+  createdAt DateTime     @default(now())
+  contacts  ContactTag[]
+}
+
+model ContactTag {
+  contactId String
+  tagId     String
+  contact   Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag       Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([contactId, tagId])
+  @@index([tagId])
+}
+
+model ConsentLog {
+  id        String        @id @default(cuid())
+  contactId String
+  contact   Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  action    ConsentAction
+  source    String
+  detail    String?
+  createdAt DateTime      @default(now())
+
+  @@index([contactId, createdAt])
+}
+
+enum ConsentAction {
+  OPT_IN
+  OPT_OUT
+}
+
+// ───────────────────────── Conversas / mensagens ─────────────────────────
+
+model Conversation {
+  id                String              @id @default(cuid())
+  contactId         String
+  contact           Contact             @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  phoneNumberId     String
+  phoneNumber       PhoneNumber         @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+  handler           ConversationHandler @default(BOT)
+  handoffReason     String?
+  handoffAt         DateTime?
+  unreadCount       Int                 @default(0)
+  awaitingReply     Boolean             @default(false) // cliente falou por último
+  lastMessageAt     DateTime?
+  lastInboundAt     DateTime? // base da janela de 24h
+  summary           String? // resumo das mensagens antigas (memória do bot)
+  summaryUpToId     String? // última mensagem incluída no resumo
+  botFailedAttempts Int                 @default(0)
+  assignedToId      String? // quem da equipe está com a conversa
+  assignedTo        User?               @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  messages          Message[]
+  botLogs           BotLog[]
+
+  @@unique([contactId, phoneNumberId])
+  @@index([lastMessageAt])
+  @@index([assignedToId])
+}
+
+enum ConversationHandler {
+  BOT
+  HUMAN
+}
+
+model Message {
+  id             String           @id @default(cuid())
+  conversationId String
+  conversation   Conversation     @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  phoneNumberId  String
+  phoneNumber    PhoneNumber      @relation(fields: [phoneNumberId], references: [id], onDelete: Cascade)
+  waMessageId    String?          @unique // wamid.* da Meta
+  direction      MessageDirection
+  type           String // text, image, document, audio, template, interactive, button, ...
+  body           String?
+  mediaId        String?
+  mediaUrl       String?
+  mediaMime      String?
+  templateName   String?
+  payload        Json? // conteúdo bruto (interactive, template params, ...)
+  status         MessageStatus
+  errorCode      String?
+  errorMessage   String?
+  sentBy         SenderKind
+  sentByUserId   String? // atendente que enviou (sentBy = HUMAN)
+  sentByUser     User?            @relation(fields: [sentByUserId], references: [id], onDelete: SetNull)
+  campaignId     String?
+  campaign       Campaign?        @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  sentAt         DateTime?
+  deliveredAt    DateTime?
+  readAt         DateTime?
+  failedAt       DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  @@index([conversationId, createdAt])
+  @@index([campaignId])
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+}
+
+enum MessageStatus {
+  RECEIVED
+  QUEUED
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum SenderKind {
+  CONTACT
+  BOT
+  HUMAN
+  SYSTEM
+  CAMPAIGN
+}
+
+model QuickReply {
+  id        String   @id @default(cuid())
+  shortcut  String   @unique // ex.: "/pix"
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Idempotência do webhook: cada evento da Meta (mensagem ou status) entra uma única vez.
+model WebhookEvent {
+  id          String    @id @default(cuid())
+  eventKey    String    @unique // "msg:<wamid>" ou "status:<wamid>:<status>"
+  kind        String
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime  @default(now())
+}
+
+// ───────────────────────── Templates / campanhas ─────────────────────────
+
+model Template {
+  id             String     @id @default(cuid())
+  wabaId         String
+  metaId         String?
+  name           String
+  language       String     @default("pt_BR")
+  category       String // MARKETING, UTILITY, AUTHENTICATION
+  status         String // APPROVED, PENDING, REJECTED, PAUSED, DISABLED
+  components     Json
+  rejectedReason String?
+  syncedAt       DateTime   @default(now())
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  campaigns      Campaign[]
+
+  @@unique([wabaId, name, language])
+}
+
+model Campaign {
+  id              String              @id @default(cuid())
+  name            String
+  phoneNumberId   String
+  phoneNumber     PhoneNumber         @relation(fields: [phoneNumberId], references: [id], onDelete: Restrict)
+  templateId      String
+  template        Template            @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  segment         Json // { tagsAny: [], tagsAll: [], excludeTags: [] }
+  variables       Json // mapeamento das variáveis do template -> campos do contato
+  status          CampaignStatus      @default(DRAFT)
+  scheduledAt     DateTime?
+  timezone        String              @default("America/Sao_Paulo")
+  windowStartHour Int                 @default(9)
+  windowEndHour   Int                 @default(20)
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  pausedReason    String?
+  pausedAt        DateTime?
+  headerMediaUrl  String? // link público da imagem/vídeo/documento quando o template tem cabeçalho de mídia
+  totalRecipients Int                 @default(0)
+  audienceBuiltAt DateTime? // público "congelado" ao iniciar
+  waitingReason   String? // por que não está enviando agora (fora da janela, limite diário…)
+  lastError       String?
+  source          String? // "painel" = veio do painel do site (precisa da aprovação da administradora)
+  sourceRef       String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  recipients      CampaignRecipient[]
+  messages        Message[]
+
+  @@index([status, scheduledAt])
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELED
+}
+
+model CampaignRecipient {
+  id           String          @id @default(cuid())
+  campaignId   String
+  campaign     Campaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contactId    String
+  contact      Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  status       RecipientStatus @default(PENDING)
+  skipReason   String?
+  waMessageId  String?
+  messageId    String?
+  errorCode    String?
+  errorMessage String?
+  sentAt       DateTime?
+  deliveredAt  DateTime?
+  readAt       DateTime?
+  failedAt     DateTime?
+  repliedAt    DateTime?
+  optedOutAt   DateTime? // pediu para sair depois de receber esta campanha
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([campaignId, contactId])
+  @@index([campaignId, status])
+  @@index([waMessageId])
+  @@index([contactId, sentAt])
+}
+
+enum RecipientStatus {
+  PENDING
+  SENDING
+  SENT
+  DELIVERED
+  READ
+  REPLIED
+  FAILED
+  SKIPPED
+  OPTED_OUT
+}
+
+// ───────────────────────── Bling / produtos ─────────────────────────
+
+model BlingAuth {
+  id              String    @id @default("default")
+  accessTokenEnc  String
+  refreshTokenEnc String
+  expiresAt       DateTime
+  scope           String?
+  connectedAt     DateTime  @default(now())
+  lastRefreshAt   DateTime?
+  updatedAt       DateTime  @updatedAt
+}
+
+model Product {
+  id               String    @id @default(cuid())
+  blingId          String    @unique
+  parentBlingId    String? // produto "pai" quando é uma variação
+  sku              String? // código no Bling (pode repetir ou estar vazio, por isso não é único)
+  name             String
+  price            Decimal   @db.Decimal(12, 2)
+  stock            Decimal   @default(0) @db.Decimal(12, 3)
+  format           String? // S simples, V com variações, E composição (kit)
+  category         String? // caminho, ex.: "Perfumaria > Produtos Femininos"
+  categoryId       String?
+  gender           String? // feminino, masculino, unissex
+  descriptionHtml  String?
+  descriptionText  String? // versão limpa para a IA
+  shortDescription String?
+  imageUrl         String? // miniatura (link assinado do Bling; renovado a cada sync)
+  searchText       String? // nome + código + categoria + descrição, minúsculo e sem acento
+  listHash         String? // detecta mudança na listagem para buscar o detalhe só quando precisa
+  detailSyncedAt   DateTime?
+  active           Boolean   @default(true)
+  syncedAt         DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([category])
+  @@index([sku])
+  @@index([active])
+}
+
+// ───────────────────────── Bot ─────────────────────────
+
+model BotLog {
+  id               String         @id @default(cuid())
+  conversationId   String?
+  conversation     Conversation?  @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  simulated        Boolean        @default(false)
+  model            String
+  inputTokens      Int            @default(0)
+  outputTokens     Int            @default(0)
+  cacheReadTokens  Int            @default(0)
+  toolsCalled      Json // [{ name, input, ok, ms }]
+  replyText        String?
+  latencyMs        Int
+  error            String?
+  simSessionId     String?
+  simSession       BotSimSession? @relation(fields: [simSessionId], references: [id], onDelete: Cascade)
+  inboundMessageId String? // mensagem do cliente que gerou esta resposta
+  cacheWriteTokens Int            @default(0)
+  iterations       Int            @default(1) // chamadas ao modelo nesta resposta
+  stopReason       String?
+  handoff          Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([createdAt])
+  @@index([simSessionId, createdAt])
+}
+
+/// Conversa de teste do simulador do painel (não usa WhatsApp).
+model BotSimSession {
+  id             String   @id @default(cuid())
+  customerName   String?
+  phone          String // telefone "do cliente" usado nas consultas de pedido
+  document       String?
+  /// [{ role: "user" | "assistant" | "system", text, imageUrl?, at }]
+  messages       Json     @default("[]")
+  summary        String?
+  summaryUpTo    Int      @default(0) // quantas mensagens já entraram no resumo
+  handedOff      Boolean  @default(false)
+  handoffReason  String?
+  failedAttempts Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  logs           BotLog[]
+}
+
+/// Histórico da base de conhecimento (knowledge/oliver.md editada pelo painel). A mais recente vale.
+model KnowledgeVersion {
+  id        String   @id @default(cuid())
+  content   String
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// ───────────────────────── Avisos de pedido (Bling → WhatsApp) ─────────────────────────
+
+/// Última situação vista de cada pedido do Bling (para perceber a mudança e não reenviar).
+model OrderState {
+  blingOrderId   String   @id
+  numero         Int
+  lojaId         String?
+  situacaoId     Int
+  situacaoSince  DateTime @default(now()) // desde quando está nesta situação (pedido parado)
+  contactBlingId String?
+  contactName    String?
+  orderDate      String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([situacaoId, situacaoSince])
+  @@index([contactBlingId])
+}
+
+enum OrderNoticeKind {
+  RECEBIDO
+  SEPARANDO
+  PRONTO_RETIRAR
+  ENVIADO
+  ENTREGUE
+  CANCELADO
+}
+
+enum OrderNoticeStatus {
+  SENT
+  SKIPPED // não enviado (sem telefone, sem template, sem rastreio ainda...) — pode virar SENT depois
+  FAILED
+}
+
+/// Um aviso por pedido e tipo: nunca manda o mesmo aviso duas vezes para o mesmo pedido.
+model OrderNotice {
+  id             String            @id @default(cuid())
+  blingOrderId   String
+  orderNumber    Int
+  kind           OrderNoticeKind
+  status         OrderNoticeStatus
+  reason         String?
+  customerName   String?
+  phone          String? // telefone da cliente (E.164)
+  sentTo         String? // para onde foi de fato (difere no modo de teste)
+  templateName   String?
+  contactId      String?
+  conversationId String?
+  messageId      String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@unique([blingOrderId, kind])
+  @@index([updatedAt])
+}
+
+// ───────────────────────── Cobrança e crediário ─────────────────────────
+
+/// Cópia das contas a receber do Bling (sincronizada a cada 15 min) para a tela de cobrança abrir na hora.
+model Receivable {
+  blingId           String    @id
+  contactBlingId    String
+  contactName       String
+  phone             String? // E.164; WhatsApp do pedido do site ou celular do contato
+  phoneSource       String? // "pedido" | "contato"
+  valor             Float
+  remaining         Float // quanto falta pagar (= valor se em aberto; 0 se recebida)
+  remainingKnown    Boolean   @default(true) // false: parcialmente paga e o Bling não disse quanto falta
+  vencimento        String // AAAA-MM-DD
+  emissao           String // AAAA-MM-DD
+  situacao          Int // 1 em aberto, 2 recebido, 3 parcial, 4 devolvido, 5 cancelado
+  orderBlingId      String?
+  orderNumber       String?
+  lojaId            String?
+  resolvedAt        DateTime? // loja e telefone já buscados
+  lastPaymentAmount Float?
+  lastPaymentAt     DateTime?
+  paymentSeq        Int       @default(0) // conta cada pagamento percebido (para agradecer uma vez cada)
+  seenAt            DateTime
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([contactBlingId])
+  @@index([situacao, vencimento])
+}
+
+enum ChargeKind {
+  LEMBRETE // 2 dias antes do vencimento
+  VENCE_HOJE
+  ATRASO
+  PAGAMENTO // pagamento recebido, obrigado
+}
+
+enum ChargeStatus {
+  SENT
+  FAILED
+}
+
+/// Cada cobrança enviada (sempre por um clique de alguém da equipe).
+model ChargeNotice {
+  id             String       @id @default(cuid())
+  /// impede o mesmo envio duas vezes (ex.: lembrete da mesma parcela; atraso do mesmo cliente no mesmo dia)
+  key            String       @unique
+  kind           ChargeKind
+  status         ChargeStatus
+  contactBlingId String
+  contactName    String?
+  receivableIds  Json
+  amount         Float?
+  balance        Float?
+  variables      Json?
+  phone          String?
+  templateName   String?
+  reason         String?
+  conversationId String?
+  messageId      String?
+  sentByUserId   String?
+  createdAt      DateTime     @default(now())
+
+  @@index([contactBlingId, createdAt])
+  @@index([createdAt])
+}
+
+// ───────────────────────── Prioridade 2: equipe, relacionamento, fornecedores ─────────────────────────
+
+enum AlertKind {
+  NOVOS_SEPARANDO
+  PARADOS
+  RESUMO_DIA
+}
+
+enum RelationKind {
+  AVALIACAO
+  ANIVERSARIO
+  RECOMPRA
+  CARRINHO
+}
+
+enum SupplierSendKind {
+  PEDIDO_COMPRA
+  COTACAO
+}
+
+enum SendStatus {
+  SENT
+  FAILED
+}
+
+/// Aviso interno para alguém da equipe (só nº do pedido e nome da cliente).
+model TeamAlert {
+  id        String     @id @default(cuid())
+  key       String     @unique
+  kind      AlertKind
+  userId    String
+  status    SendStatus
+  text      String?
+  reason    String?
+  createdAt DateTime   @default(now())
+
+  @@index([createdAt])
+}
+
+/// Mensagem de relacionamento (só para quem deu opt-in).
+model RelationNotice {
+  id             String       @id @default(cuid())
+  key            String       @unique
+  kind           RelationKind
+  contactId      String
+  status         SendStatus
+  variables      Json?
+  reason         String?
+  conversationId String?
+  sentByUserId   String?
+  createdAt      DateTime     @default(now())
+
+  @@index([contactId, createdAt])
+}
+
+/// PDF enviado a um fornecedor (pedido de compra do Bling ou cotação).
+model SupplierSend {
+  id                  String           @id @default(cuid())
+  kind                SupplierSendKind
+  status              SendStatus
+  supplierBlingId     String?
+  supplierName        String
+  phone               String
+  purchaseOrderId     String?
+  purchaseOrderNumber Int?
+  filename            String?
+  reason              String?
+  conversationId      String?
+  sentByUserId        String?
+  createdAt           DateTime         @default(now())
+
+  @@index([purchaseOrderId])
+  @@index([createdAt])
+}
+
+// ───────────────────────── Integração com o site / painel (PHP na Hostinger) ─────────────────────────
+
+/// Arte de campanha recebida do painel (servida num link público para a Meta buscar).
+model CampaignArt {
+  id        String   @id // aleatório e longo (vai no link público)
+  mime      String
+  data      Bytes
+  createdAt DateTime @default(now())
+}
+
+/// Envio pedido pelo site (POST /site/v1/messages). `ref` evita mandar duas vezes.
+model SiteMessage {
+  id           String   @id @default(cuid())
+  ref          String?  @unique
+  phone        String
+  templateName String
+  messageId    String?
+  status       String // SENT | FAILED | (status da Meta depois)
+  error        String?
+  createdAt    DateTime @default(now())
+
+  @@index([messageId])
+}
+
+/// Carrinho parado no site (o site informa; o hub oferece "você esqueceu algo" para quem tem opt-in).
+model AbandonedCart {
+  id          String    @id @default(cuid())
+  ref         String    @unique
+  phone       String
+  name        String?
+  items       Json // [{ name, qty }]
+  total       Float?
+  link        String
+  recoveredAt DateTime? // virou pedido: sai da lista
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([updatedAt])
+}
+
+/// Entregas dos avisos para o site (mensagem recebida, status, opt-out).
+model SiteWebhookLog {
+  id         String   @id @default(cuid())
+  event      String
+  ok         Boolean
+  httpStatus Int?
+  error      String?
+  attempt    Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}

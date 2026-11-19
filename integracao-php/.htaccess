@@ -1,0 +1,4 @@
+# Só o hub-webhook.php pode ser chamado pela web; a biblioteca e a configuração não.
+<FilesMatch "^(oliver-hub\.php|oliver-hub-config.*\.php|teste-.*\.php)$">
+  Require all denied
+</FilesMatch>
