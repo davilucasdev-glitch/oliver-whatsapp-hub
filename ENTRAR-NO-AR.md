@@ -8,7 +8,21 @@ Roteiro na ordem. Cada etapa diz **quem faz**. Nas etapas marcadas como suas, s�
 
 ## 1. Servidor e endereço (você, ~20 min)
 
-1. **Contratar uma VPS**. Sugestão: Hostinger, plano **KVM 2** (2 núcleos, 8 GB), sistema **Ubuntu 24.04**. Anote o **IP**.
+1. **Criar o servidor grátis na Oracle Cloud** (plano "Always Free", R$ 0 por mês):
+   1. Cadastre-se em [oracle.com/cloud/free](https://www.oracle.com/cloud/free/). O cadastro pede cartão só para conferir. O plano grátis não cobra, desde que você **não** clique em "Upgrade to Pay As You Go".
+      - Na **região**, escolha **Brazil East (São Paulo)**. Ela não muda depois.
+   2. Menu → **Compute → Instances → Create instance**:
+      - **Image**: Canonical **Ubuntu 24.04**.
+      - **Shape**: Change shape → **Ampere** → `VM.Standard.A1.Flex` com **2 OCPU e 12 GB**. Esse tamanho está dentro do grátis. Não use o "Micro" de 1 GB, que é pequeno demais.
+      - Se aparecer *"Out of capacity"*, tente outro "Availability domain" ou repita mais tarde. Isso é comum no plano grátis.
+      - **Add SSH keys**: deixe em "Generate a key pair" e **baixe a chave privada**. Ela é a única forma de entrar no servidor.
+      - **Boot volume**: 100 GB. O plano grátis inclui até 200 GB.
+   3. Abra a instância criada e anote o **Public IP address**.
+   4. Libere a internet no servidor. Na página da instância, clique na **Subnet** → **Security Lists** → **Default Security List** → **Add Ingress Rules**:
+      - Source CIDR `0.0.0.0/0`, protocolo TCP, porta de destino `80`;
+      - repita para a porta `443`.
+
+   Se preferir pagar para não depender da vaga grátis: Hostinger KVM 2, com o mesmo Ubuntu 24.04. O instalador funciona nos dois.
 2. **Criar o endereço**. No hPanel → Domínios → `blackfridaydaoliver.com` → DNS, adicione:
    - Tipo **A** · Nome **hub** · Aponta para **o IP da VPS** · TTL padrão.
 
@@ -16,7 +30,7 @@ Roteiro na ordem. Cada etapa diz **quem faz**. Nas etapas marcadas como suas, s�
 
 ## 2. Instalar (você cola 2 comandos, ~15 min)
 
-1. Abra o terminal da VPS. O hPanel → VPS → **Terminal do navegador** serve, ou SSH.
+1. Entre no servidor. No Windows, abra o PowerShell na pasta onde baixou a chave e rode `ssh -i NOME-DA-CHAVE.key ubuntu@IP-DO-SERVIDOR`. Na Hostinger, o hPanel → VPS → **Terminal do navegador** também serve.
 2. Rode:
 
 ```bash
@@ -117,12 +131,12 @@ Em cada tela, clique em **Criar templates sugeridos** e espere a aprovação, qu
 
 - **Backup**: o banco é copiado todo dia para `/opt/oliver-hub/backups`, e cada cópia fica 14 dias.
   - O **`.env` não entra no backup**. Guarde uma cópia dele num lugar seguro: sem a `ENCRYPTION_KEY`, os tokens salvos não podem ser lidos.
-  - Para ter cópia fora do servidor, ligue o backup da própria VPS no hPanel.
+  - Para ter cópia fora do servidor, baixe de vez em quando um arquivo de `backups/` para o seu computador (`scp -i CHAVE.key ubuntu@IP:/opt/oliver-hub/backups/ARQUIVO .`). Na Hostinger, dá para ligar o backup da própria VPS no hPanel.
 - **Alertas**: se o Bling desconectar, a leitura de pedidos parar ou o número tiver problema na Meta, os administradores com WhatsApp em Equipe recebem uma mensagem. O alerta também aparece na Visão geral.
 - **Registros**: mensagens, avisos, cobranças e consentimentos ficam guardados. Registros técnicos são apagados sozinhos: eventos crus da Meta e entregas ao site após 90 dias, registros do bot após 180 dias.
 
 ## Custos mensais (aproximados, confira os preços atuais)
 
-- **VPS**: plano da Hostinger.
+- **Servidor**: R$ 0 na Oracle Always Free, ou o plano da Hostinger se escolher a paga.
 - **Meta**: cobra por mensagem iniciada pela empresa (utilidade e marketing têm preços diferentes no Brasil). Respostas dentro de 24 h da mensagem da cliente não são cobradas.
 - **Anthropic**: cobra pelo uso do bot de IA. Dá para pôr limite de gasto no console.
